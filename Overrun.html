@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Emperium Overrun - Bounty Tracker</title>
+<style>
+:root{
+  --base:#1e1e2e;--mantle:#181825;--surface:#313244;--surface2:#45475a;
+  --text:#cdd6f4;--sub:#a6adc8;--green:#a6e3a1;--yellow:#f9e2af;
+  --red:#f38ba8;--blue:#89b4fa;--mauve:#cba6f7;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;min-height:100vh;background:var(--base);color:var(--text);
+  font-family:Inter,"Noto Sans Thai","Segoe UI",sans-serif;
+  display:flex;justify-content:center;padding:28px 16px;
+}
+.app{width:min(880px,100%)}
+header{text-align:center;margin-bottom:20px}
+h1{margin:0;font-size:clamp(26px,5vw,42px)}
+.subtitle{color:var(--sub);margin-top:6px}
+.grid{display:grid;grid-template-columns:1.25fr .75fr;gap:16px}
+.card{background:var(--surface);border:1px solid var(--surface2);border-radius:18px;padding:20px}
+.full{grid-column:1/-1}
+.label{font-size:13px;color:var(--sub);text-transform:uppercase;letter-spacing:.08em}
+.clock{font-size:clamp(30px,6vw,54px);font-weight:800;margin-top:5px}
+.status{text-align:center}
+.badge{display:inline-block;padding:7px 13px;border-radius:999px;font-weight:800;background:var(--surface2)}
+.countdown{font-size:clamp(48px,10vw,82px);font-weight:900;margin:10px 0 2px;font-variant-numeric:tabular-nums}
+.detail{color:var(--sub)}
+.progress{height:10px;background:var(--mantle);border-radius:999px;overflow:hidden;margin-top:18px}
+.bar{height:100%;width:0;background:var(--blue);transition:width .4s linear}
+.schedule{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
+.round{background:var(--mantle);border-radius:12px;padding:12px;text-align:center}
+.round.active{outline:2px solid var(--green)}
+.round.done{opacity:.55}
+.score{font-size:52px;font-weight:900;color:var(--blue);margin:5px 0}
+.buttons{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+button{
+ border:0;border-radius:12px;padding:15px 10px;font-weight:800;font-size:16px;
+ cursor:pointer;background:var(--surface2);color:var(--text);transition:.15s
+}
+button:hover{transform:translateY(-1px);filter:brightness(1.12)}
+button:active{transform:translateY(1px)}
+.lv3{color:var(--green)} .lv2{color:var(--yellow)} .lv1{color:var(--blue)}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.tools button{padding:9px 13px;font-size:13px}
+.danger{color:var(--red)}
+.history{margin-top:12px;max-height:230px;overflow:auto}
+.item{display:flex;justify-content:space-between;gap:10px;padding:10px 4px;border-bottom:1px solid var(--surface2)}
+.empty{text-align:center;color:var(--sub);padding:18px}
+@media(max-width:650px){.grid{grid-template-columns:1fr}.full{grid-column:auto}.buttons{grid-template-columns:1fr}.schedule{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main class="app">
+<header>
+  <h1>Emperium Overrun</h1>
+  <div class="subtitle">Bounty Tracker · UTC+7</div>
+</header>
+
+<section class="grid">
+  <div class="card">
+    <div class="label">UTC+7 Time</div>
+    <div class="clock" id="clock">--:--:--</div>
+    <div class="detail" id="date"></div>
+  </div>
+
+  <div class="card status">
+    <div class="label">Total Score</div>
+    <div class="score" id="score">0</div>
+    <div class="detail">points</div>
+  </div>
+
+  <div class="card full status">
+    <div class="badge" id="badge">Loading...</div>
+    <div class="countdown" id="countdown">--:--</div>
+    <div class="detail" id="message">กำลังตรวจสอบเวลา</div>
+    <div class="progress"><div class="bar" id="bar"></div></div>
+  </div>
+
+  <div class="card full">
+    <div class="label">Bounty Schedule</div>
+    <div class="schedule" id="schedule"></div>
+  </div>
+
+  <div class="card full">
+    <div class="label">Add Bounty Score</div>
+    <div class="buttons" style="margin-top:12px">
+      <button class="lv3" onclick="addScore(3,7)">Level 3 · +7</button>
+      <button class="lv2" onclick="addScore(2,4)">Level 2 · +4</button>
+      <button class="lv1" onclick="addScore(1,2)">Level 1 · +2</button>
+    </div>
+    <div class="tools">
+      <button onclick="undo()">↶ Undo</button>
+      <button class="danger" onclick="resetAll()">Reset Score & History</button>
+    </div>
+  </div>
+
+  <div class="card full">
+    <div class="label">History</div>
+    <div class="history" id="history"></div>
+  </div>
+</section>
+</main>
+
+<script>
+const OFFSET = 7 * 60 * 60 * 1000;
+const EVENT_START = 20*3600;
+const EVENT_END = 20*3600 + 40*60;
+const rounds = [
+  {n:1,start:20*3600+10*60,end:20*3600+15*60},
+  {n:2,start:20*3600+20*60,end:20*3600+25*60},
+  {n:3,start:20*3600+30*60,end:20*3600+35*60}
+];
+
+let state = JSON.parse(localStorage.getItem("overrun-bounty-v1") || '{"score":0,"history":[],"day":""}');
+
+function bangkokNow(){
+  // Shift current UTC epoch by +7h, then read with UTC getters.
+  return new Date(Date.now()+OFFSET);
+}
+function dayKey(d){
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`;
+}
+function secOfDay(d){return d.getUTCHours()*3600+d.getUTCMinutes()*60+d.getUTCSeconds()}
+function fmt(sec){
+  sec=Math.max(0,Math.ceil(sec));
+  const m=Math.floor(sec/60),s=sec%60;
+  return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+}
+function save(){localStorage.setItem("overrun-bounty-v1",JSON.stringify(state))}
+function resetForNewDay(d){
+  const key=dayKey(d);
+  if(state.day!==key){
+    state={score:0,history:[],day:key};
+    save();
+    renderScore();
+  }
+}
+function setStatus(text,color,msg,count,progress=0){
+  const b=document.getElementById("badge");
+  b.textContent=text;b.style.color=color;
+  document.getElementById("message").textContent=msg;
+  document.getElementById("countdown").textContent=count;
+  document.getElementById("bar").style.width=`${Math.max(0,Math.min(100,progress))}%`;
+  document.getElementById("bar").style.background=color;
+}
+function update(){
+  const d=bangkokNow(); resetForNewDay(d);
+  const h=String(d.getUTCHours()).padStart(2,"0"),m=String(d.getUTCMinutes()).padStart(2,"0"),s=String(d.getUTCSeconds()).padStart(2,"0");
+  document.getElementById("clock").textContent=`${h}:${m}:${s}`;
+  document.getElementById("date").textContent=d.toLocaleDateString("th-TH",{timeZone:"UTC",year:"numeric",month:"long",day:"numeric"});
+  const now=secOfDay(d);
+
+  if(now<EVENT_START){
+    setStatus("EVENT NOT STARTED","var(--blue)","กิจกรรมเริ่มเวลา 20:00",fmt(EVENT_START-now));
+  } else if(now>=EVENT_END){
+    setStatus("EVENT FINISHED","var(--red)","กิจกรรมวันนี้สิ้นสุดแล้ว","00:00",100);
+  } else {
+    const active=rounds.find(r=>now>=r.start && now<r.end);
+    if(active){
+      setStatus(`BOUNTY ACTIVE · ROUND ${active.n}`,"var(--green)",`Bounty หมดเวลา ${String(Math.floor(active.end/3600)).padStart(2,"0")}:${String((active.end%3600)/60).padStart(2,"0")}`,fmt(active.end-now),(now-active.start)/(active.end-active.start)*100);
+    } else {
+      const next=rounds.find(r=>now<r.start);
+      if(next){
+        const prepare=next.start-60;
+        if(now>=prepare){
+          setStatus(`PREPARING · ROUND ${next.n}`,"var(--yellow)",`Bounty รอบ ${next.n} กำลังจะเริ่ม`,fmt(next.start-now),(now-prepare)/60*100);
+        } else {
+          setStatus("WAITING","var(--blue)",`รอ Bounty รอบ ${next.n}`,fmt(next.start-now),0);
+        }
+      } else {
+        setStatus("ALL BOUNTIES FINISHED","var(--mauve)","ครบทั้ง 3 รอบแล้ว · กิจกรรมจบ 20:40",fmt(EVENT_END-now),100);
+      }
+    }
+  }
+  renderSchedule(now);
+}
+function renderSchedule(now){
+  document.getElementById("schedule").innerHTML=rounds.map(r=>{
+    let cls="",txt="Waiting";
+    if(now>=r.end){cls="done";txt="Finished"}
+    else if(now>=r.start){cls="active";txt="Active"}
+    return `<div class="round ${cls}"><b>Round ${r.n}</b><br><span class="detail">${String(Math.floor(r.start/3600)).padStart(2,"0")}:${String((r.start%3600)/60).padStart(2,"0")} – ${String(Math.floor(r.end/3600)).padStart(2,"0")}:${String((r.end%3600)/60).padStart(2,"0")}</span><br><small>${txt}</small></div>`
+  }).join("");
+}
+function addScore(level,points){
+  const d=bangkokNow();
+  const time=`${String(d.getUTCHours()).padStart(2,"0")}:${String(d.getUTCMinutes()).padStart(2,"0")}:${String(d.getUTCSeconds()).padStart(2,"0")}`;
+  state.score+=points;
+  state.history.unshift({level,points,time});
+  save();renderScore();
+}
+function undo(){
+  if(!state.history.length)return;
+  const x=state.history.shift();
+  state.score=Math.max(0,state.score-x.points);
+  save();renderScore();
+}
+function resetAll(){
+  if(!confirm("Reset คะแนนและ History ทั้งหมดของวันนี้?"))return;
+  state.score=0;state.history=[];save();renderScore();
+}
+function renderScore(){
+  document.getElementById("score").textContent=state.score;
+  const box=document.getElementById("history");
+  box.innerHTML=state.history.length?state.history.map(x=>`<div class="item"><span>${x.time} · บ้าน Level ${x.level}</span><b>+${x.points}</b></div>`).join(""):`<div class="empty">ยังไม่มีคะแนน</div>`;
+}
+renderScore();update();setInterval(update,250);
+</script>
+</body>
+</html>
