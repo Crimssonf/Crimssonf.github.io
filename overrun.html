@@ -126,9 +126,15 @@ function dayKey(d){
 }
 function secOfDay(d){return d.getUTCHours()*3600+d.getUTCMinutes()*60+d.getUTCSeconds()}
 function fmt(sec){
-  sec=Math.max(0,Math.ceil(sec));
-  const m=Math.floor(sec/60),s=sec%60;
-  return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+  sec = Math.max(0, Math.ceil(sec));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  
+  if (h > 0) {
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 function save(){localStorage.setItem("overrun-bounty-v1",JSON.stringify(state))}
 function resetForNewDay(d){
